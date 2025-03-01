@@ -344,11 +344,11 @@ func TestHashSocket(
 			ipAndPort2: "[2607:f8b0:4001:c08::cf]:443",
 		},
 	} {
-		hash, hashOK := f.hashSocket(tt.ipAndPort1, tt.ipAndPort2)
-		reversedHash, reversedHashOK := f.hashSocket(tt.ipAndPort2, tt.ipAndPort1)
-
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
+			hash, hashOK := f.hashSocket(tt.ipAndPort1, tt.ipAndPort2)
+			reversedHash, reversedHashOK := f.hashSocket(tt.ipAndPort2, tt.ipAndPort1)
 
 			assertion := assert.New(t)
 
