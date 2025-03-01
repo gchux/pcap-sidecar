@@ -19,6 +19,7 @@ import (
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/google/btree"
+	"github.com/segmentio/fasthash/fnv1a"
 	"github.com/wissance/stringFormatter"
 )
 
@@ -46,8 +47,9 @@ type (
 	}
 
 	pcapFilters struct {
-		l3 *pcapL3Filters
-		l4 *pcapL4Filters
+		l3        *pcapL3Filters
+		l4        *pcapL4Filters
+		noSockets mapset.Set[uint64]
 	}
 
 	PcapFilters interface {
@@ -78,6 +80,8 @@ type (
 
 		AllowsAnyTCPflags(*uint8) bool
 	}
+
+	Addr netip.Addr
 )
 
 func (flag *TCPFlag) materialize() uint8 {
@@ -230,6 +234,58 @@ func (f *pcapFilters) AddL4Protos(protos ...L4Proto) {
 	}
 }
 
+func (f *pcapFilters) hashAddrPort(
+	addrPort *netip.AddrPort,
+) *uint64 {
+	hash := fnv1a.HashBytes64(addrPort.Addr().AsSlice())
+	hash += uint64(addrPort.Port())
+	return &hash
+}
+
+func (f *pcapFilters) hash2tuple(
+	ipAndPort string,
+) (*uint64, bool) {
+	addrPort, err := netip.ParseAddrPort(ipAndPort)
+	if err != nil {
+		return nil, false
+	}
+	return f.hashAddrPort(&addrPort), true
+}
+
+func (f *pcapFilters) hashSocket(
+	local string, remote string,
+) (*uint64, bool) {
+	lHash, lOK := f.hash2tuple(local)
+	rHash, rOK := f.hash2tuple(remote)
+	if !lOK || !rOK {
+		return nil, false
+	}
+	hash := fnv1a.HashUint64(*lHash + *rHash)
+	return &hash, true
+}
+
+func (f *pcapFilters) AllowSocket(
+	local string, remote string,
+) bool {
+	if hash, ok := f.hashSocket(local, remote); ok {
+		f.noSockets.Remove(*hash)
+		return ok
+	}
+	return false
+}
+
+func (f *pcapFilters) DenySocket(
+	local string, remote string,
+) bool {
+	if hash, ok := f.hashSocket(local, remote); ok {
+		f.noSockets.Add(*hash)
+		return ok
+	}
+	return false
+}
+
+/* methods to check if a pacet is allowed */
+
 func (f *pcapFilters) HasL3Protos() bool {
 	return !f.l3.protos.IsEmpty()
 }
@@ -352,5 +408,6 @@ func NewPcapFilters() *pcapFilters {
 			flags:   uint8(tcpFlagNil),
 			protos:  mapset.NewSet[uint8](),
 		},
+		noSockets: mapset.NewSet[uint64](),
 	}
 }

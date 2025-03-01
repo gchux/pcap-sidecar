@@ -322,3 +322,43 @@ func TestAllowsIPaddres(
 		}
 	}
 }
+
+func TestHashSocket(
+	t *testing.T,
+) {
+	f := NewPcapFilters()
+
+	for _, tt := range []struct {
+		name       string
+		ipAndPort1 string
+		ipAndPort2 string
+	}{
+		{
+			name:       "hash_reversed_socket_IPv4",
+			ipAndPort1: "127.0.0.1:55555",
+			ipAndPort2: "10.10.10.10:443",
+		},
+		{
+			name:       "hash_reversed_socket_IPv6",
+			ipAndPort1: "[::1]:55555",
+			ipAndPort2: "[2607:f8b0:4001:c08::cf]:443",
+		},
+	} {
+		hash, hashOK := f.hashSocket(tt.ipAndPort1, tt.ipAndPort2)
+		reversedHash, reversedHashOK := f.hashSocket(tt.ipAndPort2, tt.ipAndPort1)
+
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertion := assert.New(t)
+
+			assertion.True(hashOK, sf.Format("{0} > {1}", tt.ipAndPort1, tt.ipAndPort2))
+			assertion.True(reversedHashOK, sf.Format("{0} > {1}", tt.ipAndPort2, tt.ipAndPort1))
+
+			t.Log(sf.Format("hash({0} > {1})={2}", tt.ipAndPort1, tt.ipAndPort2, *hash))
+			t.Log(sf.Format("hash({0} > {1})={2}", tt.ipAndPort2, tt.ipAndPort1, *reversedHash))
+
+			assertion.Equal(hash, reversedHash, sf.Format("hash: {0}", cmp.Diff(*hash, *reversedHash)))
+		})
+	}
+}
